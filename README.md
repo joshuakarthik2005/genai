@@ -98,3 +98,11 @@ paddy_gan/gan.py     DCGAN training (+ DiffAugment), generation
 paddy_gan/augment.py dataset balancing
 paddy_gan/classifier.py classifier training, metrics, prediction
 ```
+
+## Team
+
+| Roll No. | Name |
+|---|---|
+| CB.SC.U4CSE23501 | Joshua Karthik A |
+| CB.SC.U4CSE23519 | Venkatesh K |
+| CB.SC.U4CSE23544 | Bhuvanesh S |
