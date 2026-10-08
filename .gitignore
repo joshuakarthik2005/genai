@@ -1,6 +1,15 @@
 __pycache__/
 *.pyc
 data/
-runs/
+runs/*
+!runs/report/
+!runs/plots/
 .venv/
 .streamlit/secrets.toml
+
+# Datasets & large archives
+Rice Leaf Disease Images/
+Rice Leaf Disease Images.7z
+*.7z
+*.zip
+*.tar.gz
