@@ -630,7 +630,7 @@ def page_advisory():
             probs[target_class] = 0.994
             # Normalize
             tot = sum(probs.values())
-            probs = {c: v / tot for c in probs.items()}
+            probs = {c: v / tot for c, v in probs.items()}
 
             st.markdown(
                 f"""
