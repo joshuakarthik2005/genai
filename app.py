@@ -227,11 +227,31 @@ DISEASE_INFO = {
 
 
 # ── Helper to load sample images ──────────────────────────────────────────────
+def find_classifier():
+    """Kaggle-trained ResNet-18 checkpoint, preferring the GAN-augmented model."""
+    for name in ("gan_aug", "trad_aug", "baseline"):
+        p = CLS_DIR / name / "model.pt"
+        if p.exists():
+            return p
+    return None
+
+
+@st.cache_resource
+def cached_classifier(path, mtime):
+    from paddy_gan.classifier import load_classifier
+    return load_classifier(path)
+
+
+def predict(net, classes, img_size, image):
+    from paddy_gan.classifier import predict as _predict
+    return _predict(net, classes, img_size, image)
+
+
 def get_sample_images_dict():
     samples = {}
     if RAW.exists():
         for d in RAW.iterdir():
-            if d.is_dir():
+            if d.is_dir() and d.name in DISEASE_INFO:
                 imgs = list(d.glob("*.jpg")) + list(d.glob("*.jpeg")) + list(d.glob("*.png"))
                 if imgs:
                     samples[d.name] = imgs[:6]
@@ -382,14 +402,14 @@ All three classifiers (ResNet-18 ImageNet-pretrained, 20 epochs, batch size 64) 
             st.markdown("#### 🔬 Scientific Interpretation of the FID Scores")
             st.markdown(
                 """
-            - **Brownspot**: `207.18` (Best quality – sharp focal lesions)
-            - **Bacterialblight**: `232.69` (Good lesion vein structure)
-            - **Blast**: `246.41` (Spindle pattern reproduced)
-            - **Tungro**: `283.73` (Diffuse chlorosis / yellowing)
+            - **Brownspot**: `207.18` (closest to real of the four)
+            - **Bacterialblight**: `232.69`
+            - **Blast**: `246.41` (colour and some lesion spots present, but blurred)
+            - **Tungro**: `283.73` (furthest from real; generator was losing to the discriminator by step 5,000)
             
             > **Why are FID values between 200–280?**  
-            > Standard Inception-V3 expects **299×299** RGB inputs. Upscaling 64×64 DCGAN images to 299×299 creates high-frequency spectral smoothing that Inception-V3 detects as domain divergence.
-            > **Crucial Finding**: Despite this resolution penalty, adding 3,255 DCGAN images **preserved 100% downstream accuracy**, showing that the semantic lesion manifolds were strictly captured without introducing corrupting artifacts!
+            > Lower FID is better; values above ~100 mean the synthetic images are still clearly distinguishable from real ones. Part of the gap comes from upscaling 64×64 DCGAN output to Inception-V3's 299×299 input, and part is genuine blur and texture artefacts visible in the real-vs-synthetic grids.
+            > **Finding**: Adding 3,255 DCGAN images did **not reduce** downstream accuracy (still 100%). Because the baseline was already at 100%, this experiment cannot show whether the synthetic images *improve* the classifier.
             """
             )
 
@@ -438,22 +458,22 @@ def page_defense():
             {
                 "Evaluation Dimension": "Domain Fidelity",
                 "ChatGPT / DALL-E 3 / Midjourney": "Hallucinates generic spots; lacks biological plant pathology constraints",
-                "Our DCGAN Pipeline": "Mathematically constrained to the exact pixel & color distribution of genuine verified leaves",
+                "Our DCGAN Pipeline": "Learns only from real labelled leaf images of each disease class",
             },
             {
                 "Evaluation Dimension": "Data Provenance",
                 "ChatGPT / DALL-E 3 / Midjourney": "Trained on opaque internet scrape data with unknown labels",
-                "Our DCGAN Pipeline": "Trained exclusively on agronomist-verified Mendeley pathology datasets",
+                "Our DCGAN Pipeline": "Trained only on the public, labelled Mendeley Rice Leaf Disease dataset",
             },
             {
                 "Evaluation Dimension": "Downstream Integrity",
                 "ChatGPT / DALL-E 3 / Midjourney": "Cannot be used as clinical/agronomic ground truth (unverified symptoms)",
-                "Our DCGAN Pipeline": "Statistically proven: 3,255 synthetic samples preserve 100.0% held-out test accuracy",
+                "Our DCGAN Pipeline": "Adding 3,255 synthetic samples did not reduce held-out test accuracy (100%)",
             },
             {
                 "Evaluation Dimension": "Edge & Rural Deployment",
                 "ChatGPT / DALL-E 3 / Midjourney": "Requires high-speed internet, API tokens, cloud latency, and recurring fees",
-                "Our DCGAN Pipeline": "Runs 100% offline on a low-cost edge device (Raspberry Pi 4 / mobile phone)",
+                "Our DCGAN Pipeline": "Small models (DCGAN generator + ResNet-18, ~45 MB) that can run offline; edge-device speed not yet benchmarked",
             },
             {
                 "Evaluation Dimension": "Quantitative Quality",
@@ -474,14 +494,15 @@ def page_defense():
     **The Defensible Scientific Answer**:
     1. **Sufficient Real Data in Mendeley**: The dataset provided **1,046 to 1,280 real training images per class** (4,745 total). An ImageNet-pretrained ResNet-18 has sufficient representational capacity to separate 4 distinct visual classes when over 1,000 real samples per class are provided.
     2. **The Real Test of Generative AI**: In generative augmentation research, injecting thousands of synthetic samples often causes **mode corruption or semantic drift** (where fake artifacts degrade classifier performance).
-    3. **Our Key Contribution**: Adding **3,255 DCGAN-generated leaves** (balancing every class to 2,000 images) achieved **perfect convergence and zero performance degradation on 1,187 strictly held-out real test leaves**.
-    4. **Extrapolation to Data-Scarce Regimes**: When minority diseases have only 20–50 real field samples (e.g., emerging epidemics), this exact DiffAugment DCGAN architecture enables sample multiplication without overfitting.
+    3. **What we observed**: Adding **3,255 DCGAN-generated leaves** (balancing every class to 2,000 images) caused **no performance drop on 1,187 held-out real test leaves**. Since every method scored 100%, the test cannot measure an *improvement* from GAN augmentation.
+    4. **Limitations**: The Mendeley classes are nearly balanced (1,308–1,600 images, 1.2× spread), so there was little imbalance to correct. The dataset also appears to contain near-duplicate (shifted) photos, which can place near-copies of training images in the test split and inflate accuracy.
+    5. **Future work**: Repeat the experiment with minority classes cut to 20–50 real images and near-duplicates removed before splitting. This is the data-scarce setting the case study targets, and where GAN augmentation would be expected to help.
     """
     )
 
     st.divider()
 
-    st.subheader("3. Grad-CAM Explainability: Proving Biological Attention")
+    st.subheader("3. Grad-CAM Explainability: Where the Classifier Looks")
     st.markdown(
         """
     Rather than acting as a black box, **Grad-CAM (Gradient-weighted Class Activation Mapping)** extracts gradients from `layer4` of the ResNet-18 classifier to visualize which leaf regions triggered the prediction.
@@ -532,7 +553,12 @@ def page_dataset_explorer():
                 with cols[i % 3]:
                     st.image(str(p), caption=f"{selected_cls} #{i+1}", use_container_width=True)
         else:
-            st.info("Dataset found in workspace. View raw images in `Rice Leaf Disease Images/`.")
+            selected_cls = st.selectbox("Select Class to View", list(dist.keys()))
+            grid = PLOTS_DIR / f"plot7_real_vs_syn_{selected_cls}.png"
+            if grid.exists():
+                st.image(str(grid), caption=f"{selected_cls}: real training leaves (top) vs DCGAN synthetic (bottom), from the Kaggle run",
+                         use_container_width=True)
+            st.caption("Place the dataset in `Rice Leaf Disease Images/` to browse the full image set.")
 
 
 # ── PAGE 4: DCGAN Architecture & Training Dynamics ───────────────────────────
@@ -617,54 +643,76 @@ def page_advisory():
             if up:
                 selected_image = Image.open(up).convert("RGB")
                 st.image(selected_image, caption="Uploaded Image", use_container_width=True)
-                # Infer category from filename if available, else default
-                selected_class_name = "Blast"
 
     with c_right:
-        if selected_image is not None and selected_class_name:
+        model_path = find_classifier()
+        if model_path is None:
+            st.subheader("Treatment Advisory")
+            st.info(
+                "Automatic diagnosis is offline: the trained classifier weights are not bundled with this app. "
+                "Choose the disease below to view its treatment protocol. "
+                f"To enable live diagnosis, place the Kaggle `model.pt` at `{CLS_DIR / 'gan_aug' / 'model.pt'}`."
+            )
+            keys = list(DISEASE_INFO)
+            default = keys.index(selected_class_name) if selected_class_name in keys else 0
+            chosen = st.selectbox("Disease", keys, index=default, format_func=lambda k: DISEASE_INFO[k]["name"])
+            render_protocol(DISEASE_INFO[chosen])
+        elif selected_image is not None:
             st.subheader("Diagnostic Results")
-
-            # Simulation of ResNet-18 prediction confidence
-            target_class = selected_class_name
-            probs = {c: 0.002 for c in DISEASE_INFO}
-            probs[target_class] = 0.994
-            # Normalize
-            tot = sum(probs.values())
-            probs = {c: v / tot for c, v in probs.items()}
+            net, classes, img_size = cached_classifier(str(model_path), model_path.stat().st_mtime)
+            preds = predict(net, classes, img_size, selected_image)
+            target_class, confidence = preds[0]
+            probs = dict(preds)
+            info = DISEASE_INFO.get(target_class)
+            display_name = info["name"] if info else target_class
+            pathogen = info["pathogen"] if info else "—"
 
             st.markdown(
                 f"""
             <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;">
                 <div style="font-size: 0.85rem; color: #10B981; font-weight: 600; text-transform: uppercase;">Primary Diagnosis</div>
-                <div style="font-size: 1.8rem; font-weight: 800; color: #F8FAFC;">{DISEASE_INFO[target_class]['name']}</div>
-                <div style="color: #94A3B8; font-size: 0.9rem;">Pathogen: <i>{DISEASE_INFO[target_class]['pathogen']}</i> | Confidence: <b>99.4%</b></div>
+                <div style="font-size: 1.8rem; font-weight: 800; color: #F8FAFC;">{display_name}</div>
+                <div style="color: #94A3B8; font-size: 0.9rem;">Pathogen: <i>{pathogen}</i> | Confidence: <b>{confidence * 100:.1f}%</b></div>
             </div>
             """,
                 unsafe_allow_html=True,
             )
+            st.caption(f"ResNet-18 · `{model_path.parent.name}` model · input {img_size}×{img_size}")
+            if selected_class_name:
+                if selected_class_name == target_class:
+                    st.success(f"Matches the sample's true label ({selected_class_name}).")
+                else:
+                    st.error(f"Misclassified: true label is {selected_class_name}.")
+            if confidence < 0.6:
+                st.warning("Low confidence — the image may be unclear or outside the trained disease classes.")
 
             # Confidence distribution chart
             prob_df = pd.DataFrame(list(probs.items()), columns=["Disease", "Probability"]).set_index("Disease")
             st.bar_chart(prob_df)
 
-            # Agronomic Action Plan
-            info = DISEASE_INFO[target_class]
-            st.markdown("### 📋 Agronomist Treatment Protocol")
+            if info is not None:
+                render_protocol(info)
 
-            st.markdown(f"**Symptoms Profile:** {info['symptoms']}")
-            st.markdown(f"**Epidemiology:** {info['favorable_conditions']}")
 
-            t1, t2, t3 = st.tabs(["Chemical Sprays", "Cultural & Water Management", "Resistant Seeds"])
-            with t1:
-                st.markdown("**Recommended Fungicides / Bactericides:**")
-                for item in info["chemical_treatment"]:
-                    st.markdown(f"- 🧪 {item}")
-            with t2:
-                st.markdown("**Field Management Protocols:**")
-                for item in info["cultural_control"]:
-                    st.markdown(f"- 🚜 {item}")
-            with t3:
-                st.markdown(f"**Recommended Resistant Cultivars:** `{info['resistant_varieties']}`")
+def render_protocol(info):
+    """Agronomic action plan for one disease from DISEASE_INFO."""
+    st.markdown(f"**Pathogen:** *{info['pathogen']}*")
+    st.markdown("### 📋 Agronomist Treatment Protocol")
+
+    st.markdown(f"**Symptoms Profile:** {info['symptoms']}")
+    st.markdown(f"**Epidemiology:** {info['favorable_conditions']}")
+
+    t1, t2, t3 = st.tabs(["Chemical Sprays", "Cultural & Water Management", "Resistant Seeds"])
+    with t1:
+        st.markdown("**Recommended Fungicides / Bactericides:**")
+        for item in info["chemical_treatment"]:
+            st.markdown(f"- 🧪 {item}")
+    with t2:
+        st.markdown("**Field Management Protocols:**")
+        for item in info["cultural_control"]:
+            st.markdown(f"- 🚜 {item}")
+    with t3:
+        st.markdown(f"**Recommended Resistant Cultivars:** `{info['resistant_varieties']}`")
 
 
 # ── Navigation Router ─────────────────────────────────────────────────────────
