@@ -576,13 +576,13 @@ def page_gan_dynamics():
             r"""
         - **Generator $G(z)$**:
           - Latent noise $z \sim \mathcal{N}(0, I_{100})$
-          - Transposed Convolutions ($4\\times 4 \\rightarrow 8\\times 8 \\rightarrow 16\\times 16 \\rightarrow 32\\times 32 \\rightarrow 64\\times 64$)
+          - Transposed Convolutions ($4\times 4 \rightarrow 8\times 8 \rightarrow 16\times 16 \rightarrow 32\times 32 \rightarrow 64\times 64$)
           - BatchNorm2d + ReLU activations
-          - Output: $\\tanh$ activation $\\rightarrow [-1, 1]$ RGB
+          - Output: $\tanh$ activation $\rightarrow [-1, 1]$ RGB
         - **Discriminator $D(x)$**:
-          - Strided Convolutions ($64\\times 64 \\rightarrow 32\\times 32 \\rightarrow 16\\times 16 \\rightarrow 8\\times 8 \\rightarrow 4\\times 4$)
+          - Strided Convolutions ($64\times 64 \rightarrow 32\times 32 \rightarrow 16\times 16 \rightarrow 8\times 8 \rightarrow 4\times 4$)
           - BatchNorm2d + LeakyReLU($0.2$)
-          - Output: Sigmoid activation $\\rightarrow P(\\text{real})$
+          - Output: Sigmoid activation $\rightarrow P(\text{real})$
         - **DiffAugment**: Differentiable translation, cutout, and color jitter applied to both real and fake images during backprop to prevent discriminator memorization.
         """
         )
