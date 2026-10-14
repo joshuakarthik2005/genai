@@ -4,6 +4,11 @@ data/
 runs/*
 !runs/report/
 !runs/plots/
+!runs/classifier/
+runs/classifier/*
+!runs/classifier/gan_aug/
+runs/classifier/gan_aug/*
+!runs/classifier/gan_aug/model.pt
 .venv/
 .streamlit/secrets.toml
 
